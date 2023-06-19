@@ -1,0 +1,438 @@
+---
+title: "SVM"
+author: "Juliana Nataly Quintanilla"
+format: html
+editor: visual
+---
+
+# *Unidad III: Algoritmos de caja negra*
+
+-   ***Realizar Support Vector Machines con Datos en CRUDO" y datos con "Transformación de datos por logaritmo"***
+
+## Cargar Librerias
+
+```{r}
+library(ggplot2)
+library(e1071)
+library(dplyr)
+library(reshape2)
+library(corrplot)
+library(caret)
+library(kernlab)
+library(pROC)
+library(gridExtra)
+library(grid)
+library(ggfortify)
+library(purrr)
+library(nnet)
+library(ggstatsplot)
+library(knitr)
+library(lavaan)
+library(doParallel) # parallel processing
+registerDoParallel()
+require(foreach)
+require(iterators)
+require(parallel)
+
+```
+
+## Cargar Datos
+
+-   Se realiza la carga de datos estableciendo una variable que lee los datos ubicados en la misma carpeta, utilizando el comando "read.csv("./cancer.csv"), header=T)".
+
+-   El comando "head()" se emplea para visualizar las primeras filas de un conjunto de datos o de un objeto en formato de tabla.
+
+-   El comando "summary(datos)" se utiliza para obtener las estadísticas descriptivas de las variables.
+
+-   El comando "str(datos)" se emplea para realizar el análisis estadístico de los datos.
+
+```{r}
+# Cargar los datos
+datos <- read.csv("./cancer.csv",header = T)
+datos.numericos <- datos[, which(unlist(lapply(datos, is.numeric)))]
+colnames(datos.numericos) <- paste0("Var", rep(1:11))
+
+# Explorar los datos
+head(datos)  # Ver las primeras filas del conjunto de datos
+summary(datos)  # Obtener estadísticas descriptivas de las variables
+
+# Calcular medidas de tendencia central
+mean(datos$variable)  # Calcular la media de una variable
+median(datos$variable)  # Calcular la mediana de una variable
+table(datos$variable)  # Obtener la tabla de frecuencias de una variable categórica
+
+# Calcular medidas de dispersión
+sd(datos$variable)  # Calcular la desviación estándar de una variable
+range(datos$variable)  # Obtener el rango de una variable
+
+str(datos)
+#datos<-datos[,1:11] 
+
+```
+
+**Comentario**
+
+Cuando se aplica **`summary()`** a un conjunto de datos, se calculan varias estadísticas descriptivas para cada columna. Estas estadísticas pueden incluir:
+
+Medir la media y la mediana es útil para resumir rápidamente los datos, pero no nos proporciona información sobre la diversidad de los mismos.
+
+Para medir la dispersión, es necesario utilizar estadísticas que se ocupen de la acumulación en los datos.
+
+El resumen de cinco números es un conjunto de cinco estadísticas que representan la dispersión de un conjunto de datos:
+
+1.  Mínimo (Min.)
+
+2.  Primer cuartil o Q1 (1st Qu.)
+
+3.  Mediana o Q2 (Mediana)
+
+4.  Tercer cuartil o Q3 (3rd Qu.)
+
+5.  Máximo (Máx.)
+
+```{r}
+#head(datos)
+```
+
+## Evaluacion de datos en CRUDO
+
+### Diagrama de cajas
+
+Los diagramas de caja, son representaciones gráficas que permiten visualizar la distribución de una variable utilizando los cuartiles, lo cual nos ayuda a inferir características relacionadas con su dispersión, ubicación y simetría.
+
+En el caso de querer generar los diagramas de caja de todas las variables presentes en los datos del archivo "cancer.csv", se emplea el comando "geom_boxplot()".
+
+```{r}
+#diagrama de cajas unido
+datos.melt<-reshape2::melt((datos))
+ggplot(datos.melt,aes(y=value,fill=variable))+geom_boxplot()
+
+```
+
+### Grafica de Densidad
+
+Un gráfico de densidad muestra cómo se distribuyen los datos cuantitativos en un rango continuo o período de tiempo. Este gráfico es una adaptación de un histograma que utiliza el suavizado kernel para trazar valores, lo que permite distribuciones más suaves al eliminar el ruido.
+
+-   Se utiliza el comando "geom_density()" para graficar el diagrama de cajas de todas las variables presentes en los datos de "cancer.csv"
+
+```{r}
+datos.melt1<-reshape2::melt((datos))
+ggplot(datos.melt1,aes(x=value))+geom_density()
+```
+
+-   Transformar en función logarítmica porque los algoritmos están diseñados la mayoría por distribuciones normales, aunque el que se está observando funcionaria con todo tipo de datos, sin embargo para corroborar se necesita realizar un análisis de componentes principales.
+
+-   Se transforma a función logarítmica, puesto que la gráfica de densidad no es parecida a una gráfica de distribución normal.
+
+### Analisis de Componentes Principales (PCA) en CRUDO
+
+El análisis de componentes principales (PCA), que es una técnica de aprendizaje no supervisado, es comúnmente utilizado en combinación con el análisis exploratorio de datos.
+
+**Scree plot**
+
+Scree Plot muestra la proporción de varianza. Cada punto de la gráfica representa un componente principal y el eje y muestra la proporción de la varianza explicada. El eje x representa el número de componentes.
+
+Las líneas de Scree Plot que conectan los puntos muestran cómo se acumula la varianza explicada a medida que se agregan más componentes principales. Califique los puntos en el gráfico donde la curva se aplana o cae, por lo general, indican el número óptimo de componentes principales que se deben mantener. Los componentes anteriores a este punto suelen explicar la mayor parte de la variabilidad de los datos, mientras que los componentes posteriores a este punto pueden contener información o ruido menos relevante.
+
+**Biplot**
+
+Un biplot PCA muestra una representación de los componentes principales en un espacio bidimensional, donde cada punto representa la variable original (en este caso, la columna seleccionada del conjunto de datos).
+
+El color de los puntos en el biplot se utiliza para indicar el diagnóstico del caso (categoría "benigna" o "maligna"). Las líneas de referencia que se cruzan en el origen (punto \[0,0\]) representan los ejes de los componentes principales. Estas líneas proporcionan una referencia para la orientación y dirección de variables y observaciones en el espacio PCA. - Se realiza primero un Scree Plot y seguido se realiza un Biplot para el analisis del comportamiento de los componentes principales.
+
+```         
+-   SCREE PLOT
+```
+
+```{r}
+cancer.pca <- prcomp(datos[, 2:11], center=TRUE, scale=TRUE)
+plot(cancer.pca, type="l", main='')
+grid(nx = 10, ny = 14)
+title(main = "PCA", sub = NULL, xlab = "Components")
+box()
+```
+
+-   
+
+    -   BIPLOT
+
+```{r}
+pca_df <- as.data.frame(cancer.pca$x)
+ggplot(pca_df, aes(x=PC1, y=PC2, col=datos$diagnostico)) + geom_point(alpha=0.5)
+```
+
+### SVM con datos en crudo
+
+1.  **Dividir los datos en entrenamiento y prueba**
+
+```{r}
+n<-nrow(datos)
+set.seed(123456)
+
+datos$diagnostico<-as.factor(datos$diagnostico)
+
+train <- sample(n,floor(n*0.7))
+datos.train <- datos[train,]
+datos.test  <- datos[-train,]
+
+
+#datos.test <- dato.log[train,]
+#datos.test  <- datos.log[-train,]
+
+
+#set.seed(123456)
+#sample <- sample(c(TRUE, FALSE), nrow(datos), replace=TRUE, prob=c(0.7,0.3))
+#datos.train  <- datos[sample, ]
+#datos.test   <- datos[!sample, ]
+```
+
+2.  **Formacion de modelos**
+
+    El comando "Kernel" se utiliza para la construcción de modelos. Se aplica tanto al modelo clasifier.lineal como al modelo clasifier.gauss.
+
+```{r}
+clasifier.lineal<-ksvm(diagnostico~ .,data=datos.train,kernel="vanilladot")
+clasifier.gauss<-ksvm(diagnostico~.,data=datos.train,kernel = "rbfdot")
+clasifier.lineal
+```
+
+```{r}
+clasifier.gauss
+```
+
+3.  **Evaluación de rendimiento del modelo**
+
+    Cuando se emplea "ConfusionMatrix" para abordar un problema de clasificación con dos o más clases, la matriz de confusión se utiliza como medida de rendimiento. Se utiliza para evaluar tanto el modelo lineal como el modelo de gauss.
+
+```{r}
+prediction.linear<-predict(clasifier.lineal,datos.test);res.linear<-table(prediction.linear,datos.test$diagnostico)
+prediction.gauss<-predict(clasifier.gauss,datos.test);res.gauss<-table(prediction.gauss,datos.test$diagnostico)
+```
+
+```{r}
+cmatrix1 <- confusionMatrix(res.linear)
+print(cmatrix1)
+```
+
+```{r}
+cmatrix2<-confusionMatrix(res.gauss)
+print(cmatrix2)
+```
+
+4.  **Validación cruzada quintuple OPCIONAL**
+
+La Validación Cruzada o k-fold Cross Validation implica dividir los datos originales en dos conjuntos distintos: uno de entrenamiento y prueba, y otro de validación.
+
+```{r}
+# modelo 5-crossvalidation 
+model.5v.linear <- train(diagnostico ~ ., datos.train, method='svmLinear', 
+               trControl= trainControl(method='cv', number=5), 
+               tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
+
+# plot(model.5v, alpha=0.6)
+summary(model.5v.linear)
+prediction <- predict(model.5v.linear, datos.test)                           # predict
+res.linear.2<-table(prediction, datos.test$diagnostico)                                  # compare
+
+# predict can also return the probability for each class:
+cm_nb <- confusionMatrix(res.linear.2)
+print(cm_nb)
+```
+
+```{r}
+# modelo 5-crossvalidation 
+model.5v.radial <- train(diagnostico ~ ., datos.train, method='svmRadial', 
+               trControl= trainControl(method='cv', number=5), 
+               tuneGrid= NULL, tuneLength=10 ,trace = FALSE)
+
+# plot(model.5v, alpha=0.6)
+summary(model.5v.radial)
+prediction <- predict(model.5v.radial, datos.test)                           # predict
+res.radial.2<-table(prediction, datos.test$diagnostico)                                  # compare
+
+# predict can also return the probability for each class:
+cm_nb <- confusionMatrix(res.radial.2)
+print(cm_nb)
+```
+
+### Bootstrap
+
+```{r}
+# Por defecto es Bootstrap, con 25 repeticiones para 3 posibles decay
+# y 3 posibles sizes
+model.bootstrap.linear <- train(diagnostico ~ ., datos.train, method='svmLinear', trace = FALSE) # train
+# we also add parameter 'preProc = c("center", "scale"))' at train() for centering and scaling the data
+
+summary(model.bootstrap.linear)
+prediction <- predict(model.bootstrap.linear, datos.test)                           # predict
+res.gauss.2<-table(prediction, datos.test$diagnostico)                                  # compare
+
+# predict can also return the probability for each class:
+# prediction <- predict(model.bootstrap.linear, datos.test, type="prob")  
+# head(prediction)
+confusionMatrix(res.gauss.2)
+```
+
+```{r}
+data <- read.csv("cancer.csv")
+```
+
+DATOS
+
+```{r}
+str(data)
+
+```
+
+1.  ***Realizar una estadística descriptiva numérica de los datos***
+
+```{r}
+summary(data)  
+```
+
+**Comentario**
+
+Cuando se aplica **`summary()`** a un conjunto de datos, se calculan varias estadísticas descriptivas para cada columna. Estas estadísticas pueden incluir:
+
+Medir la media y la mediana es útil para resumir rápidamente los datos, pero no nos proporciona información sobre la diversidad de los mismos.
+
+Para medir la dispersión, es necesario utilizar estadísticas que se ocupen de la acumulación en los datos.
+
+El resumen de cinco números es un conjunto de cinco estadísticas que representan la dispersión de un conjunto de datos:
+
+1.  Mínimo (Min.)
+
+2.  Primer cuartil o Q1 (1st Qu.)
+
+3.  Mediana o Q2 (Mediana)
+
+4.  Tercer cuartil o Q3 (3rd Qu.)
+
+5.  Máximo (Máx.)
+
+    **Diagrama de cajas**
+
+```{r}
+cl <-c("mean_radius", "mean_texture", "mean_perimeter", "mean_area", "mean_smoothnes", "mean_compactness", "mean_concavity", "mean_concave_points", "mean_simmetry", "mean_fractal_dimension")
+```
+
+```{r}
+data_seleccionados <- data[cl]
+```
+
+```{r}
+#diagrama de cajas unido
+datos.melt<-reshape2::melt((data_seleccionados))
+ggplot(datos.melt,aes(y=value,fill=variable))+geom_boxplot()
+```
+
+**Diagrama de densidad**
+
+```{r}
+datos.melt1<-reshape2::melt((data_seleccionados))
+ggplot(datos.melt1,aes(x=value))+geom_density()
+```
+
+6.  **Realizar un PCA sobre las variables.**
+
+```{r}
+cl <-c("mean_radius", "mean_texture", "mean_perimeter", "mean_area", "mean_smoothnes", "mean_compactness", "mean_concavity", "mean_concave_points", "mean_simmetry", "mean_fractal_dimension")
+
+```
+
+```{r}
+data_seleccionados <- data_seleccionados[cl]
+```
+
+```{r}
+
+pcx <- prcomp(data_seleccionados, scale. = FALSE)
+
+scree <- pcx$sdev^2 / sum(pcx$sdev^2)
+plot(1:length(scree), scree, type = "b", xlab = "Componentes", ylab = "Proporción de Varianza Explicada", 
+     main = "Scree Plot", col = "green", pch = 19)
+
+biplot(pcx, scale = 0, col = c("green", "red"), cex = 0.7, main = "Biplot - PCA")
+
+text(pcx$rotation[, 1], pcx$rotation[, 2], labels = colnames(data_seleccionados), cex = 0.7, pos = 4)
+
+abline(h = 0, v = 0, lty = 2)
+```
+
+4.  **Scree plot**
+
+Scree Plot muestra la proporción de varianza. Cada punto de la gráfica representa un componente principal y el eje y muestra la proporción de la varianza explicada. El eje x representa el número de componentes.
+
+Las líneas de Scree Plot que conectan los puntos muestran cómo se acumula la varianza explicada a medida que se agregan más componentes principales. Califique los puntos en el gráfico donde la curva se aplana o cae, por lo general, indican el número óptimo de componentes principales que se deben mantener. Los componentes anteriores a este punto suelen explicar la mayor parte de la variabilidad de los datos, mientras que los componentes posteriores a este punto pueden contener información o ruido menos relevante.
+
+5.  **Biplot**
+
+Un biplot PCA muestra una representación de los componentes principales en un espacio bidimensional, donde cada punto representa la variable original (en este caso, la columna seleccionada del conjunto de datos).
+
+El color de los puntos en el biplot se utiliza para indicar el diagnóstico del caso (categoría "benigna" o "maligna"). Las líneas de referencia que se cruzan en el origen (punto \[0,0\]) representan los ejes de los componentes principales. Estas líneas proporcionan una referencia para la orientación y dirección de variables y observaciones en el espacio PCA.
+
+```{r frag1.1,echo=F}
+
+libraries <- c("reshape2", "ggplot2", "kernlab" ,"caret")
+check.libraries <- is.element(libraries, installed.packages()[, 1])==FALSE
+libraries.to.install <- libraries[check.libraries]
+if (length(libraries.to.install!=0)) {
+  install.packages(libraries.to.install)
+}
+
+success <- sapply(libraries,require, quietly = FALSE,  character.only = TRUE)
+if(length(success) != length(libraries)) {stop("A package failed to return a success in require() function.")}
+```
+
+```{r frag2, echo=TRUE,message=FALSE,warning=FALSE,fig.align='center',fig.height=4}
+clases<-as.factor(data[,ncol(data)])
+X<-data[,-ncol(data)][,-1]
+X.melt<-melt((log2(X)))
+p <- ggplot(aes(x=value,colour=variable), data=X.melt)
+p + geom_density(show.legend = F)
+```
+
+## **Paso 2: Dividir el Datos en tren y prueba**
+
+```{r}
+ n <- nrow(data_seleccionados)
+```
+
+```{r}
+# create training and test data
+ set.seed(123456)
+ 
+ train <- sample(n, floor(n * 0.7))
+ datos.train <- data[train, ]
+ datos.test <- data[-train, ]
+```
+
+## **Paso 3 - Modelo Adiestramiento**
+
+Usamos un kernel lineal
+
+```{r frag5,message=FALSE,warning=FALSE}
+clasifier.lineal<-ksvm(mean_radius~ .,data=datos.train,kernel="vanilladot")
+clasifier.gauss<-ksvm(mean_radius~.,data=datos.train,kernel = "rbfdot")
+```
+
+```{r frag6}
+clasifier.lineal
+```
+
+```{r frag7}
+clasifier.gauss
+```
+
+## **Paso 4: evaluación Rendimiento del modelo**
+
+```{r frag8}
+prediction.linear<-predict(clasifier.lineal,datos.test);res.linear<-table(prediction.linear,datos.test$mean_radius)
+prediction.gauss<-predict(clasifier.gauss,datos.test);res.gauss<-table(prediction.gauss,datos.test$mean_radius)
+```
+
+## **Paso 5 (opcional) Situaciones:**
+
+### **5.1 5 veces Validación cruzada**
+
+\
